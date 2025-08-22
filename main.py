@@ -274,4 +274,3 @@ async def global_exception_handler(request, exc):
             "type": type(exc).__name__,
         },
     )
-

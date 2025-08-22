@@ -1,3 +1,9 @@
+import os
+import json
+from typing import List, Dict, Any
+import asyncio
+import concurrent.futures
+from pathlib import Path
 import websocket
 import uuid
 import json
@@ -7,11 +13,94 @@ import urllib.error
 import base64
 import time
 import ssl
+import http.cookiejar
+import re
+
 
 save_image_websocket = "SaveImageWebsocket"
 server_address = "5dj8ees0osohp7-8188.proxy.runpod.net"
 server_url = "https://5dj8ees0osohp7-8188.proxy.runpod.net"
 client_id = str(uuid.uuid4())
+
+# Global cookie jar and XSRF token
+cookie_jar = http.cookiejar.CookieJar()
+xsrf_token = None
+
+
+def get_xsrf_token():
+    """Get XSRF token from the server"""
+    global xsrf_token, cookie_jar
+
+    try:
+        # Create SSL context
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # Create opener with cookie jar and SSL context
+        https_handler = urllib.request.HTTPSHandler(context=ssl_context)
+        cookie_handler = urllib.request.HTTPCookieProcessor(cookie_jar)
+        opener = urllib.request.build_opener(https_handler, cookie_handler)
+
+        # First, try to access the main page to get cookies and XSRF token
+        req = urllib.request.Request(f"{server_url}/")
+        req.add_header("User-Agent", "Python-FastAPI-Client/1.0")
+
+        response = opener.open(req, timeout=30)
+        html_content = response.read().decode("utf-8", errors="ignore")
+
+        # Look for XSRF token in the HTML or try to extract from cookies
+        xsrf_match = re.search(r'_xsrf["\']?\s*[:=]\s*["\']([^"\']+)', html_content)
+        if xsrf_match:
+            xsrf_token = xsrf_match.group(1)
+            print(f"Found XSRF token in HTML: {xsrf_token[:10]}...")
+            return opener
+
+        # If not found in HTML, look in cookies
+        for cookie in cookie_jar:
+            if cookie.name == "_xsrf":
+                xsrf_token = cookie.value
+                print(f"Found XSRF token in cookies: {xsrf_token[:10]}...")
+                return opener
+
+        # Try to get token from the API endpoint
+        try:
+            api_req = urllib.request.Request(f"{server_url}/api")
+            api_response = opener.open(api_req, timeout=15)
+            # Check cookies again after API call
+            for cookie in cookie_jar:
+                if cookie.name == "_xsrf":
+                    xsrf_token = cookie.value
+                    print(f"Found XSRF token from API: {xsrf_token[:10]}...")
+                    return opener
+        except:
+            pass
+
+        print("No XSRF token found, will try without it")
+        return opener
+
+    except Exception as e:
+        print(f"Error getting XSRF token: {e}")
+        # Return basic opener even if XSRF token retrieval fails
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        https_handler = urllib.request.HTTPSHandler(context=ssl_context)
+        cookie_handler = urllib.request.HTTPCookieProcessor(cookie_jar)
+        return urllib.request.build_opener(https_handler, cookie_handler)
+
+
+def create_request_with_headers():
+    """Create a request with proper headers and SSL context"""
+    # Get opener with XSRF token
+    opener = get_xsrf_token()
+
+    # Create SSL context that doesn't verify certificates (for development)
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    return opener, ssl_context
 
 
 def get_prompt_with_workflow(person_base64, outfit_base64, garment_type="top"):
@@ -145,8 +234,8 @@ def get_prompt_with_workflow(person_base64, outfit_base64, garment_type="top"):
   },
   "13": {
     "inputs": {
-      "lora_name": "pytorch_lora_weights.safetensors",
-      "strength_model": 1.0,
+    "lora_name": "migrationloracloth.safetensors",
+      "strength_model": 1.0000000000000002,
       "model": [
         "9",
         0
@@ -382,7 +471,7 @@ def get_prompt_with_workflow(person_base64, outfit_base64, garment_type="top"):
 
     # Adjust grow parameter based on garment type
     if garment_type == "bottom":
-        prompt_json["5"]["inputs"]["grow"] = 23  # Increase grow for bottom garments
+        prompt_json["5"]["inputs"]["grow"] = 21  # Increase grow for bottom garments
     else:
         prompt_json["5"]["inputs"]["grow"] = 20  # Keep default for top garments
 
@@ -403,22 +492,10 @@ def get_prompt_with_workflow(person_base64, outfit_base64, garment_type="top"):
     return prompt_json
 
 
-def create_request_with_headers():
-    """Create a request with proper headers and SSL context"""
-    # Create SSL context that doesn't verify certificates (for development)
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-
-    # Create custom opener with SSL context
-    https_handler = urllib.request.HTTPSHandler(context=ssl_context)
-    opener = urllib.request.build_opener(https_handler)
-
-    return opener, ssl_context
-
-
 def queue_prompt(prompt):
-    """Queue prompt with better error handling and headers"""
+    """Queue prompt with XSRF token support"""
+    global xsrf_token
+
     p = {"prompt": prompt, "client_id": client_id}
     data = json.dumps(p).encode("utf-8")
     print(f"Sending prompt to ComfyUI: {len(data)} bytes")
@@ -431,6 +508,11 @@ def queue_prompt(prompt):
         req.add_header("User-Agent", "Python-FastAPI-Client/1.0")
         req.add_header("Accept", "application/json")
 
+        # Add XSRF token if available
+        if xsrf_token:
+            req.add_header("X-XSRFToken", xsrf_token)
+            print(f"Added XSRF token to request: {xsrf_token[:10]}...")
+
         response = opener.open(req, timeout=60)  # Increased timeout
         result = json.loads(response.read())
         print(f"Prompt queued successfully. Response: {result}")
@@ -438,7 +520,31 @@ def queue_prompt(prompt):
 
     except urllib.error.HTTPError as e:
         print(f"HTTP Error {e.code}: {e.reason}")
-        print(f"Response body: {e.read().decode('utf-8', errors='ignore')}")
+        error_body = e.read().decode("utf-8", errors="ignore")
+        print(f"Response body: {error_body}")
+
+        # If XSRF error, try to get a fresh token and retry
+        if e.code == 403 and "_xsrf" in error_body:
+            print("XSRF token issue detected, trying to refresh token...")
+            xsrf_token = None  # Reset token
+            opener = get_xsrf_token()  # Get fresh token
+
+            if xsrf_token:
+                print("Retrying with fresh XSRF token...")
+                req = urllib.request.Request(f"{server_url}/prompt", data=data)
+                req.add_header("Content-Type", "application/json")
+                req.add_header("User-Agent", "Python-FastAPI-Client/1.0")
+                req.add_header("Accept", "application/json")
+                req.add_header("X-XSRFToken", xsrf_token)
+
+                try:
+                    response = opener.open(req, timeout=60)
+                    result = json.loads(response.read())
+                    print(f"Retry successful. Response: {result}")
+                    return result
+                except Exception as retry_error:
+                    print(f"Retry failed: {retry_error}")
+
         raise
     except urllib.error.URLError as e:
         print(f"URL Error: {e.reason}")
@@ -452,7 +558,7 @@ def queue_prompt(prompt):
 
 
 def get_image(filename, subfolder, folder_type):
-    """Get image with better error handling"""
+    """Get image with better error handling and XSRF support"""
     try:
         opener, _ = create_request_with_headers()
 
@@ -461,6 +567,10 @@ def get_image(filename, subfolder, folder_type):
 
         req = urllib.request.Request(f"{server_url}/view?{url_values}")
         req.add_header("User-Agent", "Python-FastAPI-Client/1.0")
+
+        # Add XSRF token for GET requests too if needed
+        if xsrf_token:
+            req.add_header("X-XSRFToken", xsrf_token)
 
         response = opener.open(req, timeout=60)
         return response.read()
@@ -471,13 +581,17 @@ def get_image(filename, subfolder, folder_type):
 
 
 def get_history(prompt_id):
-    """Get history with better error handling"""
+    """Get history with better error handling and XSRF support"""
     try:
         opener, _ = create_request_with_headers()
 
         req = urllib.request.Request(f"{server_url}/history/{prompt_id}")
         req.add_header("User-Agent", "Python-FastAPI-Client/1.0")
         req.add_header("Accept", "application/json")
+
+        # Add XSRF token if available
+        if xsrf_token:
+            req.add_header("X-XSRFToken", xsrf_token)
 
         response = opener.open(req, timeout=30)
         return json.loads(response.read())
@@ -565,6 +679,9 @@ def fetch_image_from_comfy(person_base64, outfit_base64, garment_type="top"):
     )
 
     try:
+        # Initialize XSRF token first
+        get_xsrf_token()
+
         # Create SSL context for WebSocket
         _, ssl_context = create_request_with_headers()
 
@@ -604,6 +721,9 @@ def fetch_image_polling(person_base64, outfit_base64, garment_type="top"):
     """Fallback method using polling instead of websocket with garment type support"""
     print(f"Using polling method as fallback for {garment_type} garment")
     try:
+        # Initialize XSRF token first
+        get_xsrf_token()
+
         prompt = get_prompt_with_workflow(person_base64, outfit_base64, garment_type)
         prompt_response = queue_prompt(prompt)
         prompt_id = prompt_response["prompt_id"]
@@ -701,6 +821,256 @@ def test_connection():
         return False
 
 
+# Rest of the code remains the same...
+GARMENTS_DIR = "garments"  # Directory containing pre-stored garments
+TOP_GARMENTS_DIR = os.path.join(GARMENTS_DIR, "tops")
+BOTTOM_GARMENTS_DIR = os.path.join(GARMENTS_DIR, "bottoms")
+
+
+def ensure_garments_directories():
+    """Ensure garment directories exist"""
+    os.makedirs(TOP_GARMENTS_DIR, exist_ok=True)
+    os.makedirs(BOTTOM_GARMENTS_DIR, exist_ok=True)
+
+
+def image_file_to_base64(file_path: str) -> str:
+    """Convert image file to base64 string"""
+    with open(file_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+    return encoded_string
+
+
+def get_available_garments() -> Dict[str, List[Dict[str, str]]]:
+    """Get list of available garments from directories"""
+    ensure_garments_directories()
+
+    garments = {"tops": [], "bottoms": []}
+
+    # Get top garments
+    if os.path.exists(TOP_GARMENTS_DIR):
+        for filename in os.listdir(TOP_GARMENTS_DIR):
+            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                garments["tops"].append(
+                    {
+                        "filename": filename,
+                        "name": os.path.splitext(filename)[0].replace("_", " ").title(),
+                        "path": os.path.join(TOP_GARMENTS_DIR, filename),
+                    }
+                )
+
+    # Get bottom garments
+    if os.path.exists(BOTTOM_GARMENTS_DIR):
+        for filename in os.listdir(BOTTOM_GARMENTS_DIR):
+            if filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                garments["bottoms"].append(
+                    {
+                        "filename": filename,
+                        "name": os.path.splitext(filename)[0].replace("_", " ").title(),
+                        "path": os.path.join(BOTTOM_GARMENTS_DIR, filename),
+                    }
+                )
+
+    return garments
+
+
+async def process_single_garment(
+    person_base64: str, garment_info: Dict[str, str], garment_type: str
+) -> Dict[str, Any]:
+    """Process a single garment try-on"""
+    try:
+        garment_base64 = image_file_to_base64(garment_info["path"])
+
+        # Use your existing fetch_image_from_comfy function
+        result_image = fetch_image_from_comfy(
+            person_base64, garment_base64, garment_type
+        )
+
+        if result_image:
+            # Convert result to base64 for easy transport
+            result_base64 = base64.b64encode(result_image).decode("utf-8")
+            return {
+                "success": True,
+                "garment_name": garment_info["name"],
+                "garment_filename": garment_info["filename"],
+                "garment_type": garment_type,
+                "result_image": result_base64,
+            }
+        else:
+            return {
+                "success": False,
+                "garment_name": garment_info["name"],
+                "garment_filename": garment_info["filename"],
+                "garment_type": garment_type,
+                "error": "Failed to generate try-on result",
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "garment_name": garment_info["name"],
+            "garment_filename": garment_info["filename"],
+            "garment_type": garment_type,
+            "error": str(e),
+        }
+
+
+async def batch_try_on_with_stored_garments(person_base64: str) -> Dict[str, Any]:
+    """Process all available garments with the person image"""
+    garments = get_available_garments()
+    all_results = []
+
+    # Prepare all garment processing tasks
+    tasks = []
+
+    # Add top garments (limit to 3)
+    for garment_info in garments["tops"][:3]:
+        tasks.append(process_single_garment(person_base64, garment_info, "top"))
+
+    # Add bottom garments (limit to 2)
+    for garment_info in garments["bottoms"][:2]:
+        tasks.append(process_single_garment(person_base64, garment_info, "bottom"))
+
+    if not tasks:
+        return {
+            "success": False,
+            "message": "No garments found in project directory",
+            "results": [],
+        }
+
+    # Process all garments concurrently with a semaphore to limit concurrent requests
+    semaphore = asyncio.Semaphore(2)  # Limit to 2 concurrent ComfyUI requests
+
+    async def process_with_semaphore(task):
+        async with semaphore:
+            return await task
+
+    # Execute all tasks
+    try:
+        results = await asyncio.gather(
+            *[process_with_semaphore(task) for task in tasks]
+        )
+
+        successful_results = [r for r in results if r["success"]]
+        failed_results = [r for r in results if not r["success"]]
+
+        return {
+            "success": True,
+            "total_processed": len(results),
+            "successful": len(successful_results),
+            "failed": len(failed_results),
+            "results": results,
+            "message": f"Processed {len(results)} garments: {len(successful_results)} successful, {len(failed_results)} failed",
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Batch processing failed: {str(e)}",
+            "results": [],
+        }
+
+
+def batch_try_on_sync(person_base64: str) -> Dict[str, Any]:
+    """Synchronous wrapper for batch try-on"""
+    return asyncio.run(batch_try_on_with_stored_garments(person_base64))
+
+
+# Alternative sequential processing (if async causes issues)
+def batch_try_on_sequential(person_base64: str) -> Dict[str, Any]:
+    """Process garments sequentially (safer but slower)"""
+    garments = get_available_garments()
+    all_results = []
+
+    # Process top garments (limit to 3)
+    for garment_info in garments["tops"][:3]:
+        try:
+            garment_base64 = image_file_to_base64(garment_info["path"])
+            result_image = fetch_image_from_comfy(person_base64, garment_base64, "top")
+
+            if result_image:
+                result_base64 = base64.b64encode(result_image).decode("utf-8")
+                all_results.append(
+                    {
+                        "success": True,
+                        "garment_name": garment_info["name"],
+                        "garment_filename": garment_info["filename"],
+                        "garment_type": "top",
+                        "result_image": result_base64,
+                    }
+                )
+            else:
+                all_results.append(
+                    {
+                        "success": False,
+                        "garment_name": garment_info["name"],
+                        "garment_filename": garment_info["filename"],
+                        "garment_type": "top",
+                        "error": "Failed to generate try-on result",
+                    }
+                )
+        except Exception as e:
+            all_results.append(
+                {
+                    "success": False,
+                    "garment_name": garment_info["name"],
+                    "garment_filename": garment_info["filename"],
+                    "garment_type": "top",
+                    "error": str(e),
+                }
+            )
+
+    # Process bottom garments (limit to 2)
+    for garment_info in garments["bottoms"][:2]:
+        try:
+            garment_base64 = image_file_to_base64(garment_info["path"])
+            result_image = fetch_image_from_comfy(
+                person_base64, garment_base64, "bottom"
+            )
+
+            if result_image:
+                result_base64 = base64.b64encode(result_image).decode("utf-8")
+                all_results.append(
+                    {
+                        "success": True,
+                        "garment_name": garment_info["name"],
+                        "garment_filename": garment_info["filename"],
+                        "garment_type": "bottom",
+                        "result_image": result_base64,
+                    }
+                )
+            else:
+                all_results.append(
+                    {
+                        "success": False,
+                        "garment_name": garment_info["name"],
+                        "garment_filename": garment_info["filename"],
+                        "garment_type": "bottom",
+                        "error": "Failed to generate try-on result",
+                    }
+                )
+        except Exception as e:
+            all_results.append(
+                {
+                    "success": False,
+                    "garment_name": garment_info["name"],
+                    "garment_filename": garment_info["filename"],
+                    "garment_type": "bottom",
+                    "error": str(e),
+                }
+            )
+
+    successful_results = [r for r in all_results if r["success"]]
+    failed_results = [r for r in all_results if not r["success"]]
+
+    return {
+        "success": True,
+        "total_processed": len(all_results),
+        "successful": len(successful_results),
+        "failed": len(failed_results),
+        "results": all_results,
+        "message": f"Processed {len(all_results)} garments: {len(successful_results)} successful, {len(failed_results)} failed",
+    }
+
+
 # Test function to validate ComfyUI endpoints
 def test_comfyui_endpoints():
     """Test various ComfyUI endpoints"""
@@ -718,6 +1088,10 @@ def test_comfyui_endpoints():
         try:
             req = urllib.request.Request(endpoint)
             req.add_header("User-Agent", "Python-FastAPI-Client/1.0")
+
+            # Add XSRF token if available
+            if xsrf_token:
+                req.add_header("X-XSRFToken", xsrf_token)
 
             response = opener.open(req, timeout=10)
             results[endpoint] = {"status": response.getcode(), "success": True}
