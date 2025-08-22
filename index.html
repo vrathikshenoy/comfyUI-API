@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display Image</title>
+</head>
+<body>
+    <h1>Display Image from Comfy UI Server</h1>
+    
+    <!-- Input field to get user input -->
+    <input type="text" id="user-input" placeholder="Enter text for image" />
+    <button onclick="fetchImage()">Load Image</button>
+    
+    <!-- Container for displaying the image -->
+    <div id="image-container"></div>
+
+    <script>
+        function fetchImage() {
+            // Get the value from the input field
+            const inputValue = document.getElementById('user-input').value;
+
+            // Fetch the image with the input as a query parameter
+            fetch(`http://127.0.0.1:8000/get-image?input=${encodeURIComponent(inputValue)}`)
+                .then(response => {
+                    if (!response.ok) throw new Error('Image not found');
+                    return response.blob();
+                })
+                .then(blob => {
+                    // Create an image element and set its source to the fetched blob
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(blob);
+                    img.alt = "Image from server";
+                    
+                    // Clear any existing image and display the new one
+                    document.getElementById('image-container').innerHTML = '';
+                    document.getElementById('image-container').appendChild(img);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>

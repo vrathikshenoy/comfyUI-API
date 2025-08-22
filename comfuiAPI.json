@@ -1,0 +1,341 @@
+{
+  "1": {
+    "inputs": {
+      "method": "human_parts (deeplabv3p)",
+      "confidence": 0.4000000000000001,
+      "crop_multi": 0,
+      "image": [
+        "26",
+        0
+      ]
+    },
+    "class_type": "easy humanSegmentation",
+    "_meta": {
+      "title": "Human Segmentation"
+    }
+  },
+  "2": {
+    "inputs": {
+      "guidance": 30,
+      "conditioning": [
+        "19",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "3": {
+    "inputs": {
+      "style_model_name": "flux1-redux-dev.safetensors"
+    },
+    "class_type": "StyleModelLoader",
+    "_meta": {
+      "title": "Load Style Model"
+    }
+  },
+  "5": {
+    "inputs": {
+      "grow": 20,
+      "blur": 7,
+      "mask": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "INPAINT_ExpandMask",
+    "_meta": {
+      "title": "Expand Mask"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "clip_name": "sigclip_vision_patch14_384.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "Load CLIP Vision"
+    }
+  },
+  "9": {
+    "inputs": {
+      "lora_name": "FLUX.1-Turbo-Alpha.safetensors",
+      "strength_model": 1.1000000000000003,
+      "model": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "10": {
+    "inputs": {
+      "clip_name1": "t5xxl_fp16.safetensors",
+      "clip_name2": "clip_l.safetensors",
+      "type": "flux",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "DualCLIPLoader"
+    }
+  },
+  "11": {
+    "inputs": {
+      "unet_name": "flux1-fill-dev.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "12": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "13": {
+    "inputs": {
+      "lora_name": "pytorch_lora_weights.safetensors",
+      "strength_model": 1.0000000000000002,
+      "model": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "14": {
+    "inputs": {
+      "conditioning": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "16": {
+    "inputs": {
+      "samples": [
+        "23",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "18": {
+    "inputs": {
+      "crop": "center",
+      "clip_vision": [
+        "7",
+        0
+      ],
+      "image": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "CLIPVisionEncode",
+    "_meta": {
+      "title": "CLIP Vision Encode"
+    }
+  },
+  "19": {
+    "inputs": {
+      "image_strength": "highest",
+      "conditioning": [
+        "12",
+        0
+      ],
+      "style_model": [
+        "3",
+        0
+      ],
+      "clip_vision_output": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "StyleModelApplySimple",
+    "_meta": {
+      "title": "StyleModelApplySimple"
+    }
+  },
+  "20": {
+    "inputs": {
+      "patch_mode": "patch_right",
+      "output_length": 1080,
+      "patch_color": "#00FF00",
+      "first_image": [
+        "25",
+        0
+      ],
+      "second_image": [
+        "26",
+        0
+      ],
+      "second_mask": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "AddMaskForICLora",
+    "_meta": {
+      "title": "Add Mask For IC Lora"
+    }
+  },
+  "21": {
+    "inputs": {
+      "noise_mask": true,
+      "positive": [
+        "2",
+        0
+      ],
+      "negative": [
+        "14",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ],
+      "pixels": [
+        "20",
+        0
+      ],
+      "mask": [
+        "20",
+        1
+      ]
+    },
+    "class_type": "InpaintModelConditioning",
+    "_meta": {
+      "title": "InpaintModelConditioning"
+    }
+  },
+  "22": {
+    "inputs": {
+      "width": [
+        "20",
+        4
+      ],
+      "height": [
+        "20",
+        5
+      ],
+      "position": "top-left",
+      "x_offset": [
+        "20",
+        2
+      ],
+      "y_offset": [
+        "20",
+        3
+      ],
+      "image": [
+        "16",
+        0
+      ]
+    },
+    "class_type": "ImageCrop+",
+    "_meta": {
+      "title": "🔧 Image Crop"
+    }
+  },
+  "23": {
+    "inputs": {
+      "seed": 583967762944198,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": [
+        "13",
+        0
+      ],
+      "positive": [
+        "21",
+        0
+      ],
+      "negative": [
+        "21",
+        1
+      ],
+      "latent_image": [
+        "21",
+        2
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "25": {
+    "inputs": {
+      "base64_string": ""
+    },
+    "class_type": "Base64DecodeNode",
+    "_meta": {
+      "title": "cloth"
+    }
+  },
+  "26": {
+    "inputs": {
+      "base64_string": ""
+    },
+    "class_type": "Base64DecodeNode",
+    "_meta": {
+      "title": "person"
+    }
+  },
+  "28": {
+    "inputs": {
+      "images": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "SaveImageWebsocket",
+    "_meta": {
+      "title": "SaveImageWebsocket"
+    }
+  }
+}
