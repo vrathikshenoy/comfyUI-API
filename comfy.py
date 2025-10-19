@@ -18,8 +18,8 @@ import re
 
 
 save_image_websocket = "SaveImageWebsocket"
-server_address = "5dj8ees0osohp7-8188.proxy.runpod.net"
-server_url = "https://5dj8ees0osohp7-8188.proxy.runpod.net"
+server_address = ""
+server_url = ""
 client_id = str(uuid.uuid4())
 
 # Global cookie jar and XSRF token
@@ -460,19 +460,21 @@ def get_prompt_with_workflow(person_base64, outfit_base64, garment_type="top"):
 
     # Set garment type specific mask components
     mask_components = {
-        "top": [15, 14, 5],  # Upper body garments
+        "top": [8, 7, 6, 4],  # Upper body garments
         "bottom": [14, 9, 16, 17],  # Lower body garments
     }
 
     # Update mask components based on garment type
     prompt_json["1"]["inputs"]["mask_components"]["__value__"] = mask_components.get(
-        garment_type, [15, 14, 5]
+        garment_type, [8, 7, 6, 4]
     )
 
     # Adjust grow parameter based on garment type
     if garment_type == "bottom":
         prompt_json["5"]["inputs"]["grow"] = 21  # Increase grow for bottom garments
+
     else:
+        prompt_json["1"]["inputs"]["method"] = "human_parts (deeplabv3p)"
         prompt_json["5"]["inputs"]["grow"] = 20  # Keep default for top garments
 
     # Set the base64 images correctly for Base64DecodeNode nodes
@@ -921,12 +923,12 @@ async def batch_try_on_with_stored_garments(person_base64: str) -> Dict[str, Any
     # Prepare all garment processing tasks
     tasks = []
 
-    # Add top garments (limit to 3)
-    for garment_info in garments["tops"][:3]:
+    # Add top garments
+    for garment_info in garments["tops"]:
         tasks.append(process_single_garment(person_base64, garment_info, "top"))
 
-    # Add bottom garments (limit to 2)
-    for garment_info in garments["bottoms"][:2]:
+    # Add bottom garments
+    for garment_info in garments["bottoms"]:
         tasks.append(process_single_garment(person_base64, garment_info, "bottom"))
 
     if not tasks:
@@ -974,14 +976,13 @@ def batch_try_on_sync(person_base64: str) -> Dict[str, Any]:
     return asyncio.run(batch_try_on_with_stored_garments(person_base64))
 
 
-# Alternative sequential processing (if async causes issues)
 def batch_try_on_sequential(person_base64: str) -> Dict[str, Any]:
     """Process garments sequentially (safer but slower)"""
     garments = get_available_garments()
     all_results = []
 
-    # Process top garments (limit to 3)
-    for garment_info in garments["tops"][:3]:
+    # Process top garments
+    for garment_info in garments["tops"]:
         try:
             garment_base64 = image_file_to_base64(garment_info["path"])
             result_image = fetch_image_from_comfy(person_base64, garment_base64, "top")
@@ -1018,8 +1019,8 @@ def batch_try_on_sequential(person_base64: str) -> Dict[str, Any]:
                 }
             )
 
-    # Process bottom garments (limit to 2)
-    for garment_info in garments["bottoms"][:2]:
+    # Process bottom garments
+    for garment_info in garments["bottoms"]:
         try:
             garment_base64 = image_file_to_base64(garment_info["path"])
             result_image = fetch_image_from_comfy(

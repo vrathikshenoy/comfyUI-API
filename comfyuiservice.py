@@ -9,8 +9,8 @@ import time
 import ssl
 
 save_image_websocket = "SaveImageWebsocket"
-server_address = "5dj8ees0osohp7-8188.proxy.runpod.net"
-server_url = "https://5dj8ees0osohp7-8188.proxy.runpod.net"
+server_address = ""
+server_url = ""
 client_id = str(uuid.uuid4())
 
 
